@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ST&C</title>
+<link rel="icon" href="icon.png">
+<style>
+:root{ --bg:#121212; --text:#fff; --btn:#333; }
+body.light{ --bg:#fff; --text:#000; --btn:#e0e0e0; }
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:sans-serif; display:flex; justify-content:center; align-items:center;
+  height:100dvh; width:100vw; overflow:hidden;
+  user-select:none; -webkit-user-select:none; -ms-user-select:none;
+}
+.container{
+  width:100%; height:100%;
+  display:flex; flex-direction:column; justify-content:center; align-items:center;
+  text-align:center; position:relative;
+}
+.display{ font-size:clamp(4rem,12vw,7rem); margin:20px 0; }
+button{
+  font-size:clamp(1rem,3vw,1.5rem); padding:15px 20px; margin:8px;
+  border:none; border-radius:12px; background:var(--btn); color:#fff;
+}
+
+/* ===== 右側目盛り ===== */
+.ruler{
+  position:absolute; right:0; top:0; bottom:0;
+  width:70px; display:flex; align-items:center; justify-content:center;
+}
+.scale{
+  position:relative; height:90%; width:20px; background:#555; border-radius:10px;
+  touch-action:none;
+}
+.tick{
+  position:absolute; left:100%; margin-left:5px; font-size:10px;
+}
+.handle{
+  position:absolute; left:-5px; width:30px; height:10px; background:#fff; border-radius:5px; cursor:pointer;
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="display" id="time">00:00:00.00</div>
+  <div class="display" id="counter">0</div>
+
+  <div>
+    <button onclick="toggle()">▶ / ⏸</button>
+    <button onclick="increment()">＋</button>
+    <button onclick="decrement()">－</button>
+    <button onclick="resetAll()">リセット</button>
+  </div>
+
+  <div class="ruler">
+    <div class="scale" id="scale"></div>
+  </div>
+</div>
+
+<script>
+// ===== 時間 =====
+let running=false;
+let startTime=0;
+let baseElapsed=Number(localStorage.getItem('time'))||0;
+let threshold=Number(localStorage.getItem('threshold'))||600000; // デフォ10分
+
+function now(){ return Date.now(); }
+
+function format(ms){
+  const s=Math.floor(ms/1000);
+  const h=String(Math.floor(s/3600)).padStart(2,'0');
+  const m=String(Math.floor((s%3600)/60)).padStart(2,'0');
+  const sec=String(s%60).padStart(2,'0');
+  const cs=String(Math.floor((ms%1000)/10)).padStart(2,'0');
+  return `${h}:${m}:${sec}.${cs}`;
+}
+
+function getElapsed(){
+  return running ? baseElapsed + (now()-startTime) : baseElapsed;
+}
+
+function update(){
+  const elapsed = getElapsed();
+  document.getElementById('time').textContent = format(elapsed);
+  localStorage.setItem('time', elapsed);
+
+  if(elapsed >= threshold){
+    document.body.classList.add('light');
+  }
+}
+}
+
+function toggle(){
+  if(running){ baseElapsed += now()-startTime; running=false; }
+  else{ startTime=now(); running=true; }
+}
+
+// ===== カウンター =====
+let count=Number(localStorage.getItem('count'))||0;
+function updateCounter(){
+  document.getElementById('counter').textContent=count;
+  localStorage.setItem('count',count);
+}
+function increment(){ count++; updateCounter(); }
+function decrement(){ count--; updateCounter(); }
+
+// ===== リセット =====
+function resetAll(){
+  running=false; baseElapsed=0; count=0; threshold=600000;
+  localStorage.setItem('time',0);
+  localStorage.setItem('count',0);
+  localStorage.setItem('threshold',threshold);
+  document.body.classList.remove('light');
+  setHandleFromThreshold();
+  update(); updateCounter();
+}
+
+// ===== 目盛り =====
+const scale=document.getElementById('scale');
+const maxMin=20; // 1〜20分（0は使わない）
+
+// 目盛り描画
+for(let i=1;i<=maxMin;i++){
+  const t=document.createElement('div');
+  t.className='tick';
+  t.style.bottom=(i/maxMin*100)+'%';
+  t.textContent=i+'m';
+  scale.appendChild(t);
+}
+
+// ハンドル
+const handle=document.createElement('div');
+handle.className='handle';
+scale.appendChild(handle);
+
+function setHandleFromThreshold(){
+  const min=threshold/60000;
+  handle.style.bottom=(min/maxMin*100)+'%';
+}
+
+function updateThresholdFromPos(y){
+  const rect=scale.getBoundingClientRect();
+  let ratio=(rect.bottom-y)/rect.height;
+  ratio=Math.max(0,Math.min(1,ratio));
+  let min=Math.round(ratio*maxMin);
+
+  if(min < 1) min = 1;
+
+  threshold=min*60000;
+  localStorage.setItem('threshold',threshold);
+  setHandleFromThreshold();
+
+  // ★延長時：現在時間が閾値未満ならダークに戻す
+  const elapsed = getElapsed();
+  if(elapsed < threshold){
+    document.body.classList.remove('light');
+  }
+}
+
+// pointer操作（PC/スマホ対応）
+let dragging=false;
+handle.addEventListener('pointerdown',(e)=>{
+  dragging=true;
+  handle.setPointerCapture(e.pointerId);
+  updateThresholdFromPos(e.clientY);
+});
+});
+window.addEventListener('pointerup',()=>dragging=false);
+window.addEventListener('pointercancel',()=>dragging=false);
+window.addEventListener('pointermove',(e)=>{
+  if(dragging) updateThresholdFromPos(e.clientY);
+});
+
+// バークリックでも移動
+scale.addEventListener('pointerdown',(e)=>{
+  dragging=true;
+  scale.setPointerCapture(e.pointerId);
+  updateThresholdFromPos(e.clientY);
+});
+});
+
+// ===== 初期化 =====
+setInterval(update,10);
+window.onload=()=>{
+  update(); updateCounter(); setHandleFromThreshold();
+};
+// 右クリック禁止
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// スクロールはCSSのoverflowで抑制（イベントは潰さない）
+document.addEventListener('touchmove', e => e.preventDefault(), { passive:false });
+
+</script>
+</body>
+</html>
